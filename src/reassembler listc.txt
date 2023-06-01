@@ -1,0 +1,145 @@
+#include "reassembler.hh"
+#include <iostream>
+#include <iterator>
+using namespace std;
+
+Reassembler::Reassembler()
+  : next_index(0)
+  , bytes_pending_(0)
+  , last_index(0)
+  , finish_(false)
+  , remains()
+  // , hash()
+{
+}
+
+void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring, Writer& output )
+{
+  // Your code here.
+  if (output.is_closed()) return ;
+  if (is_last_substring) last_index = first_index + data.size() - 1, finish_ = true;
+  if (is_last_substring && data.size() == 0 && first_index == next_index) output.close();
+
+  uint64_t available_capacity_ = output.available_capacity();
+  uint64_t idx = next_index - first_index;
+  if (next_index >= first_index && idx < data.size()) // 有东西能存
+  { 
+    if (available_capacity_ > 0)
+    {
+      uint64_t writable = min(available_capacity_, data.size() - idx);
+      output.push(std::move(data.substr(idx, writable)));
+      next_index += writable;
+      if (is_last_substring)
+      {
+        output.close();
+        return ;
+      } 
+      // 看看intervals 有没有后续, 并删除过期的
+      string s;
+      for (auto it = remains.begin(); it->first <= next_index && it != remains.end(); )
+      {
+        if (it->first == next_index)
+        {
+          s += it->second;
+          // output.push(std::move(s));
+          ++next_index;
+        } 
+        auto t = it;
+        ++it;
+        // hash.erase(t->first);
+        remains.erase(t);
+        --bytes_pending_;
+        if (finish_ && next_index > last_index) break;
+      }
+      
+      if (s.size()) 
+      {
+        output.push(std::move(s));
+      }
+
+      if (finish_ && next_index > last_index)
+      {
+        output.close();
+        return ;
+      }
+    }
+    else {} // discard 
+  }
+  else if (data.size() > 0 && first_index > next_index && bytes_pending_ < available_capacity_ - 1)
+  {
+    if (finish_ && first_index > last_index) return;
+    List::iterator st;
+    // if (it->first == first_index) // 存在first_index
+    // {
+    //   st = hash[first_index];
+    // } 
+    // else if (it == hash.begin()) // first 是左边界
+    // {
+    //   remains.push_front({first_index, data[0]});
+    //   st = hash[first_index] = remains.begin();
+    //   ++bytes_pending_;
+    // }
+    // else if (it == hash.end()) // 右边界
+    // {
+    //   remains.push_back({first_index, data[0]});
+    //   st = hash[first_index] = --remains.end();
+    //   ++bytes_pending_;
+    // }
+    // else // 在中间
+    // {
+    //   --it;
+    //   st = hash[first_index] = remains.insert(std::next(it->second), {first_index, data[0]});
+    //   ++bytes_pending_;
+    // }
+
+    // if (hash.count(first_index)) st = hash[first_index];
+    // else if (hash.empty() || remains.begin()->first > first_index)
+    // {
+    //   remains.push_front({first_index, data[0]});
+    //   st = hash[first_index] = remains.begin();
+    //   ++bytes_pending_;
+    // }
+    // else if (remains.back().first < first_index)
+    // {
+    //   remains.push_back({first_index, data[0]});
+    //   st = hash[first_index] = --remains.end();
+    //   ++bytes_pending_;
+    // }
+    // else 
+    {
+      auto it = remains.begin();
+      while (it != remains.end() && it->first < first_index) ++it;
+      // st = hash[first_index] = remains.insert(it, {first_index, data[0]});
+      if (it != remains.end() && it->first == first_index) st = it;
+      else 
+      {
+        st = remains.insert(it, {first_index, data[0]});
+        ++bytes_pending_;
+      }
+    }
+
+    for (uint64_t j = first_index + 1, i = 1; bytes_pending_ < available_capacity_ - 1 && j < next_index + available_capacity_ && i < data.size(); ++i, ++j)
+    {
+      if (finish_ && j > last_index) return ;
+      auto t = st;
+      ++t;
+      if (t == remains.end() || t->first != j)
+      {
+        // st = hash[j] = remains.insert(std::next(st), {j, data[i]});
+        st = remains.insert(std::next(st), {j, data[i]});
+        ++bytes_pending_;
+      }
+      else 
+      {
+        ++st;
+      }
+    }
+  }
+  if (finish_ && next_index > last_index) output.close();
+}
+
+uint64_t Reassembler::bytes_pending() const
+{
+  // Your code here.
+  return bytes_pending_;
+}

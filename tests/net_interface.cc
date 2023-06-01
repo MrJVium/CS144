@@ -69,7 +69,7 @@ int main()
 
       const auto datagram = make_datagram( "5.6.7.8", "13.12.11.10" );
       test.execute( SendDatagram { datagram, Address( "192.168.0.1", 0 ) } );
-
+      
       // outgoing datagram should result in an ARP request
       test.execute( ExpectFrame { make_frame(
         local_eth,

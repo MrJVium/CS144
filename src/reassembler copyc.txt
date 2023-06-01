@@ -1,0 +1,146 @@
+// #include "reassembler.hh"
+// #include <iostream>
+// using namespace std;
+
+Reassembler::Reassembler()
+  : next_index(0)
+  , bytes_pending_(0)
+  , intervals() // 左边界
+  , hash()
+{
+  intervals.insert({0, 0});
+}
+
+void Reassembler::insert( uint64_t first_index, string data, bool is_last_substring, Writer& output )
+{
+  // Your code here.
+  uint64_t available_capacity_ = output.available_capacity();
+  uint64_t idx = next_index - first_index;
+  cout << "init: " << available_capacity_ << ' ' << first_index << ' ' << idx << ' ' << data << endl;
+  if (next_index >= first_index && idx < data.size())
+  {
+    if (available_capacity_ > 0) // 写入
+    {
+      // cout << data.substr(idx) << endl;
+      uint64_t writable = min(available_capacity_, data.size() - idx);
+      output.push(std::move(data.substr(idx, writable)));
+      next_index += writable;
+      // 看看intervals 有没有后续
+      available_capacity_ = output.available_capacity();
+      {
+        auto m = intervals.lower_bound({next_index, 0});
+        if ((m != intervals.end() && m->first == next_index) || (--m)->second >= next_index) // 存在后续
+        {
+          auto x = m->first, y = m->second;
+          std::string t = hash[x];
+          writable = min(available_capacity_, y - next_index + 1);
+          if (available_capacity_) output.push(std::move(t.substr(next_index - x, writable)));
+          hash.erase(x);
+          intervals.erase(m);
+          bytes_pending_ -= t.size();
+          next_index += writable;
+
+          if (y >= next_index) // 用剩的放回
+          {
+            hash[next_index] = t.substr(next_index - x);
+            intervals.insert({next_index, y});
+            bytes_pending_ += y - next_index + 1;
+          }
+        }
+      }
+      // 清理过期区间
+      clear_overdue();
+    } else {}// discard
+  } 
+  else if (data.size() <= available_capacity_ && data.size() > 0) // 存入 intervals
+  {
+    uint64_t end_index = first_index + data.size() - 1;
+    cout << "push: " << first_index << ' ' << end_index << ' ' << intervals.size() << ' ' << data << endl;
+    push(first_index, end_index, data);
+    cout << "pushed:" << intervals.size() << endl;
+  }
+
+  if (is_last_substring) output.close();
+}
+
+uint64_t Reassembler::bytes_pending() const
+{
+  // Your code here.
+  return bytes_pending_;
+}
+
+
+void Reassembler::push(uint64_t start, uint64_t end, const std::string& data)
+{
+  std::string s = data;
+  uint64_t l = start, r = end;
+  cout << "s: " << s << endl;
+  while (true)
+  {
+    auto m = intervals.lower_bound({start, 0});
+    if (m == intervals.end()) break;
+    auto tm = m;
+    --tm;
+    if (tm != intervals.begin() && tm->second >= start) // 包含start，不包含end
+    {
+      auto x = tm->first, y = tm->second;
+      if (y >= end) return; // 新区间 不提供新index
+      std::string t = hash[x];
+      s = t + s.substr(y - start + 1);
+      l = x;
+      hash.erase(x);
+      intervals.erase(tm);
+      bytes_pending_ -= y - x + 1;
+    }
+    else // m->first >= start, 也即 tm与[l,r]不重叠
+    {
+      if (m->second <= end) // 夹在[start,end]中间的碎片 会多次执行
+      {
+        auto x = m->first;
+        bytes_pending_ -= hash[x].size();
+        hash.erase(x);
+        intervals.erase(m);
+      }
+      else if (m->first > end) {} // 区间外 不管
+      else // 夹住end 的区间
+      {
+        auto x = m->first, y = m->second;
+        std::string t = hash[x];
+        s += t.substr(end - x + 1);
+        r = y;
+        hash.erase(x);
+        intervals.erase(m);
+        break; // 这种情况是最后一次执行
+      }
+    }
+  }
+  // 将结果存入
+  intervals.insert({l, r});
+  hash[l] = s;
+  bytes_pending_ += s.size();
+  cout << "fk:" << bytes_pending_ << '@' << s << '@' << data << endl;
+}
+
+
+void Reassembler::clear_overdue()
+{
+  // 清除 next_index 之前的，但是保留它及之后的
+  while (true)
+  {
+    auto m = intervals.lower_bound({next_index, 0});
+    --m;
+    if (m == intervals.begin()) break;
+    auto x = m->first, y = m->second;
+    std::string t = hash[x];
+    bytes_pending_ -= hash[x].size();
+    hash.erase(x);
+    intervals.erase(m);
+    if (y >= next_index) // 保留
+    {
+      t = t.substr(next_index - x);
+      hash[next_index] = t;
+      intervals.insert({next_index, y});
+      bytes_pending_ += t.size();
+    }
+  }
+}

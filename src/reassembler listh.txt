@@ -3,7 +3,8 @@
 #include "byte_stream.hh"
 
 #include <string>
-#include <set>
+#include <list>
+#include <unordered_map>
 
 class Reassembler
 {
@@ -28,15 +29,18 @@ public:
    *
    * The Reassembler should close the stream after writing the last byte.
    */
+  Reassembler();
   void insert( uint64_t first_index, std::string data, bool is_last_substring, Writer& output );
 
+  // How many bytes are stored in the Reassembler itself?  upper bound?
   uint64_t bytes_pending() const;
-  uint64_t get_next_index() const { return next_index; }
 private:
-  using Elem = std::pair<uint64_t, std::string>;
-  uint64_t next_index {0};
-  uint64_t last_index {0};
-  bool finish_ {false};
-  uint64_t bytes_pending_ {0};
-  std::set<Elem> remains {};
+  using List = std::list<std::pair<uint64_t, char>> ;
+  uint64_t next_index;
+  uint64_t bytes_pending_;
+  uint64_t last_index;
+  bool finish_;
+
+  List remains;
+  // std::unordered_map<uint64_t, List::iterator> hash;
 };
